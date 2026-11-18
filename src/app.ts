@@ -33,13 +33,23 @@ const app: Application = express();
 const httpServer = createServer(app);
 
 // ── Security & Middleware ─────────────────────────────────────────────────────
-app.use(helmet());
 app.use(
-  cors({
-    origin: process.env.CORS_ORIGIN?.split(',') ?? '*',
-    credentials: true,
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
   })
 );
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow any origin with credentials (reflects request origin)
+      callback(null, true);
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+  })
+);
+app.options('*', cors());
 app.use(morgan(config.isProduction ? 'combined' : 'dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
