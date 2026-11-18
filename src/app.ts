@@ -32,6 +32,9 @@ import swaggerDocument from './docs/swagger.json';
 const app: Application = express();
 const httpServer = createServer(app);
 
+// Trust Render's reverse proxy for correct client IP detection
+app.set('trust proxy', 1);
+
 // ── Security & Middleware ─────────────────────────────────────────────────────
 app.use(
   helmet({

@@ -10,24 +10,27 @@ const rateLimitHandler = (_req: unknown, res: unknown) => {
   );
 };
 
-/** Default API rate limit: 100 requests per 15 minutes */
+/** Default API rate limit: generous for dashboard & realtime polling */
 export const defaultLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 2000, // Generous limit: allows frequent dashboard auto-refreshes
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: (req) => {
+    // Skip rate limiting for admin endpoints and localhost/internal
+    return req.path.startsWith('/api/admin') || req.path === '/health';
+  },
+});
+
+/** Auth endpoints: 100 requests per 15 minutes */
+export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
-  skip: (req) => req.ip === '127.0.0.1' && process.env.NODE_ENV === 'test',
-});
-
-/** Auth endpoints: stricter — 20 requests per 15 minutes */
-export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler,
-  keyGenerator: (req) => req.ip ?? 'unknown',
+  keyGenerator: (req) => (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown',
 });
 
 /** Location update: 60/min per driver (once per second max) */
