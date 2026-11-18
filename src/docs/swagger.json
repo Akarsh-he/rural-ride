@@ -1,0 +1,97 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "RuralMobility Backend API",
+    "version": "1.0.0",
+    "description": "Production-grade RESTful API for RuralMobility — Varanasi, UP, India shared rural mobility platform"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "System Health Check",
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/api/admin/login": {
+      "post": {
+        "summary": "Admin Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Returns JWT token and admin profile" }
+        }
+      }
+    },
+    "/api/admin/dashboard/stats": {
+      "get": {
+        "summary": "Dashboard KPI Overview",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Real database metrics" }
+        }
+      }
+    },
+    "/api/admin/dashboard/active-drivers": {
+      "get": {
+        "summary": "Live GPS Tracking for Consented Active Drivers",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of active drivers" }
+        }
+      }
+    },
+    "/api/journeys": {
+      "get": {
+        "summary": "Search matching routes along PostGIS linestring",
+        "parameters": [
+          { "name": "pickupLat", "in": "query", "schema": { "type": "number" } },
+          { "name": "pickupLng", "in": "query", "schema": { "type": "number" } },
+          { "name": "dropoffLat", "in": "query", "schema": { "type": "number" } },
+          { "name": "dropoffLng", "in": "query", "schema": { "type": "number" } }
+        ],
+        "responses": {
+          "200": { "description": "Matching shared journeys" }
+        }
+      }
+    },
+    "/api/bookings": {
+      "post": {
+        "summary": "Create atomic seat booking request",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "201": { "description": "Booking request created" }
+        }
+      }
+    }
+  }
+}

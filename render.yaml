@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: rural-mobility-backend
+    env: node
+    plan: free
+    region: singapore # or oregon / frankfurt
+    rootDir: RuralMobility/backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rural-mobility-db
+          property: connectionString
+      - key: REDIS_URL
+        value: "" # Optional, leave blank or connect Render Redis
+      - key: ROUTE_MAX_DEVIATION_METERS
+        value: "500"
+      - key: BOOKING_REQUEST_TIMEOUT_SECONDS
+        value: "120"
+      - key: LOCATION_CACHE_TTL_SECONDS
+        value: "30"
+      - key: PLATFORM_COMMISSION_PCT
+        value: "10"
+
+databases:
+  - name: rural-mobility-db
+    plan: free
+    databaseName: rural_mobility
+    user: postgres
