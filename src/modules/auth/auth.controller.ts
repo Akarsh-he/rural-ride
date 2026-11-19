@@ -7,6 +7,63 @@ const authService = new AuthService();
 
 export class AuthController {
   /**
+   * POST /api/auth/register
+   * Create account using phone number, password, and username.
+   */
+  async register(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { phone, password, username, role } = req.body as {
+        phone?: string;
+        password?: string;
+        username?: string;
+        role?: any;
+      };
+
+      if (!phone) {
+        sendValidationError(res, 'Mobile phone number is required');
+        return;
+      }
+      if (!password || password.length < 6) {
+        sendValidationError(res, 'Password must be at least 6 characters');
+        return;
+      }
+      if (!username) {
+        sendValidationError(res, 'Username is required');
+        return;
+      }
+
+      const result = await authService.registerWithPassword({ phone, password, username, role });
+      sendCreated(res, result, 'Account created successfully! Welcome to JustGO.');
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /api/auth/login
+   * Log in using phone number and password.
+   */
+  async login(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { phone, password, role } = req.body as {
+        phone?: string;
+        password?: string;
+        role?: any;
+      };
+
+      if (!phone || !password) {
+        sendValidationError(res, 'Both phone number and password are required');
+        return;
+      }
+
+      const result = await authService.loginWithPassword({ phone, password, role });
+      sendSuccess(res, result, 'Signed in successfully! Welcome back.');
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
    * POST /api/auth/send-otp
    * Send 6-digit SMS OTP to Indian phone number.
    */

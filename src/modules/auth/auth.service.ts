@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { query, withTransaction } from '../../config/database';
 import { verifyIdToken, getFirebaseUser } from '../../config/firebase';
 import { config } from '../../config/env';
@@ -457,5 +458,195 @@ export class AuthService {
     }
 
     throw new AppError('User not found or suspended', 401);
+  }
+
+  /**
+   * Direct Phone + Password Registration
+   */
+  async registerWithPassword(payload: {
+    phone: string;
+    password: string;
+    username: string;
+    role?: UserRole;
+  }): Promise<{
+    token: string;
+    user: {
+      id: string;
+      phone: string;
+      username: string;
+      role: UserRole;
+      driverProfileId?: string;
+      passengerProfileId?: string;
+    };
+  }> {
+    const { phone: rawPhone, password, username: rawUsername, role = 'passenger' } = payload;
+    const phone = this.normalizePhone(rawPhone);
+    const username = (rawUsername || '').trim();
+
+    if (!password || password.length < 6) {
+      throw new AppError('Password must be at least 6 characters long.', 400);
+    }
+
+    if (!username || !/^[a-zA-Z0-9_]{3,30}$/.test(username)) {
+      throw new AppError('Username must be 3-30 characters with letters, numbers, or underscores only.', 400);
+    }
+
+    // Check if username is already taken by another user
+    const checkUsername = await query('SELECT id FROM users WHERE LOWER(username) = LOWER($1)', [username]);
+    if (checkUsername.rows.length > 0) {
+      throw new AppError('This username is already taken. Please choose another username.', 409);
+    }
+
+    // Check if phone number is already registered with password
+    const existingUser = await query('SELECT id, password_hash FROM users WHERE phone = $1', [phone]);
+    if (existingUser.rows.length > 0 && existingUser.rows[0].password_hash) {
+      throw new AppError('This phone number is already registered. Please sign in.', 409);
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    return withTransaction(async (client) => {
+      let userId: string;
+
+      if (existingUser.rows.length > 0) {
+        userId = existingUser.rows[0].id;
+        await client.query(
+          `UPDATE users 
+           SET password_hash = $1, username = $2, name = COALESCE(name, $2), role = $3, 
+               phone_verified = true, status = 'active', updated_at = NOW(), last_login_at = NOW()
+           WHERE id = $4`,
+          [passwordHash, username, role, userId]
+        );
+      } else {
+        const insertRes = await client.query(
+          `INSERT INTO users (phone, password_hash, username, name, role, status, phone_verified, preferred_language, created_at, updated_at, last_login_at)
+           VALUES ($1, $2, $3, $3, $4, 'active', true, 'hi', NOW(), NOW(), NOW())
+           RETURNING id`,
+          [phone, passwordHash, username, role]
+        );
+        userId = insertRes.rows[0].id;
+      }
+
+      let driverProfileId: string | undefined;
+      let passengerProfileId: string | undefined;
+
+      if (role === 'driver') {
+        const dp = await client.query(
+          `INSERT INTO driver_profiles (user_id, full_name, created_at, updated_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (user_id) DO UPDATE SET full_name = EXCLUDED.full_name
+           RETURNING id`,
+          [userId, username]
+        );
+        driverProfileId = dp.rows[0].id;
+      } else {
+        const pp = await client.query(
+          `INSERT INTO passenger_profiles (user_id, full_name, created_at, updated_at)
+           VALUES ($1, $2, NOW(), NOW())
+           ON CONFLICT (user_id) DO UPDATE SET full_name = EXCLUDED.full_name
+           RETURNING id`,
+          [userId, username]
+        );
+        passengerProfileId = pp.rows[0].id;
+      }
+
+      const token = jwt.sign(
+        { userId, phone, role },
+        config.jwtSecret,
+        { expiresIn: '30d' }
+      );
+
+      logger.info('User registered with phone & password', { userId, phone: '[REDACTED]', username, role });
+
+      return {
+        token,
+        user: {
+          id: userId,
+          phone,
+          username,
+          role,
+          driverProfileId,
+          passengerProfileId,
+        },
+      };
+    });
+  }
+
+  /**
+   * Direct Phone + Password Login
+   */
+  async loginWithPassword(payload: {
+    phone: string;
+    password: string;
+    role?: UserRole;
+  }): Promise<{
+    token: string;
+    user: {
+      id: string;
+      phone: string;
+      username: string;
+      role: UserRole;
+      driverProfileId?: string;
+      passengerProfileId?: string;
+    };
+  }> {
+    const { phone: rawPhone, password, role } = payload;
+    const phone = this.normalizePhone(rawPhone);
+
+    if (!password) {
+      throw new AppError('Password is required.', 400);
+    }
+
+    const res = await query(
+      `SELECT u.id, u.phone, u.username, u.name, u.role, u.status, u.password_hash,
+              dp.id AS driver_profile_id,
+              pp.id AS passenger_profile_id
+       FROM users u
+       LEFT JOIN driver_profiles dp ON dp.user_id = u.id
+       LEFT JOIN passenger_profiles pp ON pp.user_id = u.id
+       WHERE u.phone = $1`,
+      [phone]
+    );
+
+    if (res.rows.length === 0) {
+      throw new AppError('Invalid mobile number or password. Please check and try again.', 401);
+    }
+
+    const user = res.rows[0];
+
+    if (!user.password_hash) {
+      throw new AppError('No password set for this account. Please create an account or set a password.', 401);
+    }
+
+    if (user.status === 'suspended') {
+      throw new AppError('Your account has been suspended. Please contact support.', 403);
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      throw new AppError('Invalid mobile number or password. Please check and try again.', 401);
+    }
+
+    // Update last login timestamp
+    await query('UPDATE users SET last_login_at = NOW(), last_seen_at = NOW() WHERE id = $1', [user.id]);
+
+    const activeRole = role || user.role || 'passenger';
+    const token = jwt.sign(
+      { userId: user.id, phone: user.phone, role: activeRole },
+      config.jwtSecret,
+      { expiresIn: '30d' }
+    );
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        username: user.username || user.name || 'JustGO User',
+        role: activeRole,
+        driverProfileId: user.driver_profile_id,
+        passengerProfileId: user.passenger_profile_id,
+      },
+    };
   }
 }
