@@ -3,9 +3,10 @@ import { query } from '../../config/database';
 export class UsersService {
   async getMe(userId: string) {
     const res = await query(
-      `SELECT u.id, u.phone, u.role, u.status, u.created_at,
-              dp.id as driver_profile_id, dp.verification_status,
-              pp.id as passenger_profile_id, pp.name as passenger_name
+      `SELECT u.id, u.phone, u.username, u.name, u.role, u.status, u.phone_verified,
+              u.preferred_language, u.created_at, u.updated_at, u.last_login_at,
+              dp.id as driver_profile_id, dp.verification_status, dp.full_name as driver_name,
+              pp.id as passenger_profile_id, pp.full_name as passenger_name
        FROM users u
        LEFT JOIN driver_profiles dp ON dp.user_id = u.id
        LEFT JOIN passenger_profiles pp ON pp.user_id = u.id
